@@ -1,0 +1,11 @@
+moveit_setup_assistant_config:
+  URDF:
+    package: ur_e_description
+    relative_path: urdf/ur3e_robot_moveit.urdf.xacro
+    xacro_args: ""
+  SRDF:
+    relative_path: config/ur3e.srdf
+  CONFIG:
+    author_name: Chris Paliqaw
+    author_email: chris@qalang.com
+    generated_timestamp: 1647612288
