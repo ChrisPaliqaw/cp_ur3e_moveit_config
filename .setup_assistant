@@ -8,4 +8,4 @@ moveit_setup_assistant_config:
   CONFIG:
     author_name: Chris Paliqaw
     author_email: chris@qalang.com
-    generated_timestamp: 1647612288
+    generated_timestamp: 1647631137
