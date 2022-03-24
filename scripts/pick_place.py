@@ -39,13 +39,34 @@ float64 position
 float64 max_effort
 """
 
+"""
+rosmsg show TransformStamped
+[geometry_msgs/TransformStamped]:
+std_msgs/Header header
+  uint32 seq
+  time stamp
+  string frame_id
+string child_frame_id
+geometry_msgs/Transform transform
+  geometry_msgs/Vector3 translation
+    float64 x
+    float64 y
+    float64 z
+  geometry_msgs/Quaternion rotation
+    float64 x
+    float64 y
+    float64 z
+    float64 w
+"""
+
 import sys
 import copy
 import rospy
 import moveit_commander
 import moveit_msgs.msg
-import geometry_msgs.msg
-import tf
+from geometry_msgs.msg import Pose
+# import tf
+import tf2_ros
 from gazebo_msgs.srv import GetModelState, GetModelStateRequest, GetModelStateResponse
 import actionlib
 from control_msgs.msg import GripperCommandAction, GripperCommandGoal, GripperCommandResult
@@ -67,6 +88,9 @@ class PickPlace():
     MODEL_STATE_SERVICE = '/gazebo/get_model_state'
 
     GRIPPER_ACTION_SERVER = '/gripper_controller/gripper_cmd'
+
+    GRASPABLE_OBJECT_PARENT_FRAME = "world"
+    GRASPABLE_OBJECT = "graspable_object"
     
     def __init__(self):
         rospy.wait_for_service(PickPlace.MODEL_STATE_SERVICE)
@@ -76,10 +100,15 @@ class PickPlace():
         model_state_response = model_state_service(model_state_request)
         self._demo_cube_position = model_state_response.pose.position
         q = model_state_response.pose.orientation
+        """
         self._demo_cube_quaternion = q
         self._demo_cube_euler = tf.transformations.euler_from_quaternion(
             [q.x, q.y, q.z, q.w])
         rospy.loginfo(f"{self._demo_cube_position=} {self._demo_cube_euler=}")
+        """
+        self._tf_Buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_Buffer)
+
         self._wait_between_commands = rospy.Rate(PickPlace.WAIT_BETWEEN_COMMANDS)
 
         moveit_commander.roscpp_initialize(sys.argv)
@@ -97,6 +126,25 @@ class PickPlace():
         self._ctrl_c = False
         rospy.on_shutdown(self.__shutdownhook)
 
+    def __move_to_graspable_object(self):
+        try:
+            # transform_stamped = self._tf_Buffer.lookup_transform(PickPlace.GRASPABLE_OBJECT, PickPlace.GRASPABLE_OBJECT_PARENT_FRAME, rospy.Time(0))
+            
+            pose = Pose()
+            """
+            pose.orientation = transform_stamped.transform.rotation
+            pose.position = transform_stamped.transform.translation
+            """
+            pose = self._group.get_current_pose().pose
+            rospy.loginfo(f"{self._group.get_end_effector_link()}")
+            pose.position.z += 0.02
+            self._group.set_pose_target(pose)
+            self._group.plan()
+            self._group.go(wait=True)
+
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            rospy.logerr(f"Unable to lookup {PickPlace.GRASPABLE_OBJECT}")
+
     def __moveToNamedTarget(self, target):
         rospy.loginfo(f"Going to named target {target}")
         self._group.set_named_target(target)
@@ -104,7 +152,7 @@ class PickPlace():
         self._group.go(wait=True)
         rospy.loginfo(f"Went to named target {target}")
         self._wait_between_commands.sleep()
-
+        
 
     def __gripper_to_position(self, position):
         max_effort = PickPlace.GRIPPER_MAX_EFFORT
@@ -125,10 +173,15 @@ class PickPlace():
 
     def execute(self):
         self.__moveToNamedTarget(PickPlace.HOME_TARGET)
+
         self.__moveToNamedTarget(PickPlace.GRAB_TARGET)
+        self.__move_to_graspable_object()
+
+        """
         self.__gripper_to_position(PickPlace.GRIPPER_GRIP_POSITION)
         self.__moveToNamedTarget(PickPlace.AWAY_TARGET)
         self.__gripper_to_position(PickPlace.GRIPPER_RELEASE_POSITION)
+        """
         moveit_commander.roscpp_shutdown()
         
     def __shutdownhook(self):
