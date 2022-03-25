@@ -1,5 +1,5 @@
 cartesian_limits:
-  max_trans_vel: 1
-  max_trans_acc: 2.25
-  max_trans_dec: -5
-  max_rot_vel: 1.57
+  max_trans_vel: 0.5 # 1
+  max_trans_acc: 1.1225 # 2.25
+  max_trans_dec: -2.5 # -5
+  max_rot_vel: 1.285 # 1.57

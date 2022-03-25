@@ -77,7 +77,7 @@ class PickPlace():
     AWAY_TARGET = "away"
     GRAB_TARGET = "grab"
 
-    WAIT_BETWEEN_COMMANDS = 3.0
+    WAIT_BETWEEN_COMMANDS = 4.0
 
     GRIPPER_RELEASE_POSITION = 0.75
     GRIPPER_GRIP_POSITION = -1 * GRIPPER_RELEASE_POSITION
@@ -89,8 +89,11 @@ class PickPlace():
 
     GRIPPER_ACTION_SERVER = '/gripper_controller/gripper_cmd'
 
-    GRASPABLE_OBJECT_PARENT_FRAME = "world"
+    GRASPABLE_OBJECT_PARENT_FRAME = 'world'# 'base_link' # "world"
     GRASPABLE_OBJECT = "graspable_object"
+
+    ADJUST_X = -5.019327136768296
+    ADJUST_Y = 4.059796511223785
     
     def __init__(self):
         rospy.wait_for_service(PickPlace.MODEL_STATE_SERVICE)
@@ -126,33 +129,69 @@ class PickPlace():
         self._ctrl_c = False
         rospy.on_shutdown(self.__shutdownhook)
 
-    def __move_to_graspable_object(self):
-        try:
-            # transform_stamped = self._tf_Buffer.lookup_transform(PickPlace.GRASPABLE_OBJECT, PickPlace.GRASPABLE_OBJECT_PARENT_FRAME, rospy.Time(0))
-            
-            pose = Pose()
-            """
-            pose.orientation = transform_stamped.transform.rotation
-            pose.position = transform_stamped.transform.translation
-            """
-            pose = self._group.get_current_pose().pose
-            rospy.loginfo(f"{self._group.get_end_effector_link()}")
-            pose.position.z += 0.02
-            self._group.set_pose_target(pose)
-            self._group.plan()
-            self._group.go(wait=True)
+        self._home_pose = None
+        self._grab_pose = None
 
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            rospy.logerr(f"Unable to lookup {PickPlace.GRASPABLE_OBJECT}")
+        """
+        [INFO] [1648211286.376362, 1731.904000]: set_z=0.32126392468749704
+        [INFO] [1648211286.388484, 1731.905000]: set_orientation=x: -0.5366506632278824
+        y: 0.5264509022492222
+        z: -0.4613877837701542
+        w: 0.4711441670717353
+        [INFO] [1648211286.393404, 1731.906000]: adjust_x=-5.019327136768296
+        [INFO] [1648211286.405967, 1731.907000]: adjust_y=4.059796511223785
+        """
 
-    def __moveToNamedTarget(self, target):
+        self._grab_pose = Pose()
+        self._grab_pose.position.z = 0.3211662958172352
+        self._grab_pose.orientation.x = -0.5367037404604901
+        self._grab_pose.orientation.y = 0.5265342827156797
+        self._grab_pose.orientation.z = -0.46133084299189914
+        self._grab_pose.orientation.w = 0.4710462794728212
+
+        graspable_transform = self.__get_graspable_transform()
+        rospy.loginfo(f"{graspable_transform=}")
+        self._grab_pose.position.x = graspable_transform.translation.x + PickPlace.ADJUST_X
+        self._grab_pose.position.y = graspable_transform.translation.y + PickPlace.ADJUST_Y
+
+        rospy.loginfo(f"{self._group.get_pose_reference_frame()=}")
+
+    def __move_to_pose(self, pose: Pose):
+        # transform_stamped = self._tf_Buffer.lookup_transform(PickPlace.GRASPABLE_OBJECT, PickPlace.GRASPABLE_OBJECT_PARENT_FRAME, rospy.Time(0))
+        
+        # pose = Pose()
+        """
+        pose.orientation = transform_stamped.transform.rotation
+        pose.position = transform_stamped.transform.translation
+        """
+        # pose = self._group.get_current_pose().pose
+        # rospy.loginfo(f"{self._group.get_end_effector_link()}")
+        # pose.position.z += 0.02
+        self._group.set_pose_target(pose)
+        rospy.loginfo(f"Moving to {pose=}")
+        self._group.plan()
+        self._group.go(wait=True)
+        self._wait_between_commands.sleep()
+    
+    def __get_graspable_transform(self):
+        # self._tf_Buffer.wait_for_transform(PickPlace.GRASPABLE_OBJECT, PickPlace.GRASPABLE_OBJECT_PARENT_FRAME, rospy.Time())
+        transform_stamped = self._tf_Buffer.lookup_transform(
+            PickPlace.GRASPABLE_OBJECT_PARENT_FRAME, PickPlace.GRASPABLE_OBJECT, rospy.Time(), rospy.Duration(20.0))
+        rospy.loginfo(f"Raw graspable tf is {transform_stamped}")
+        return transform_stamped.transform
+
+    def __move_to_gripping_pose(self):
+        rospy.loginfo(f"Goal grip pose is {self._grab_pose}")
+        # pose.position.z += PickPlace.Z_OFFSET_FROM_GRASPABLE_OBJECT
+        self.__move_to_pose( self._grab_pose)
+
+    def __move_to_named_target(self, target):
         rospy.loginfo(f"Going to named target {target}")
         self._group.set_named_target(target)
         self._group.plan()
         self._group.go(wait=True)
         rospy.loginfo(f"Went to named target {target}")
         self._wait_between_commands.sleep()
-        
 
     def __gripper_to_position(self, position):
         max_effort = PickPlace.GRIPPER_MAX_EFFORT
@@ -172,16 +211,36 @@ class PickPlace():
 
 
     def execute(self):
-        self.__moveToNamedTarget(PickPlace.HOME_TARGET)
-
-        self.__moveToNamedTarget(PickPlace.GRAB_TARGET)
-        self.__move_to_graspable_object()
-
-        """
+        self.__move_to_named_target(PickPlace.HOME_TARGET)
+        # self.__move_to_named_target(PickPlace.GRAB_TARGET)
+        self.__move_to_gripping_pose()
         self.__gripper_to_position(PickPlace.GRIPPER_GRIP_POSITION)
-        self.__moveToNamedTarget(PickPlace.AWAY_TARGET)
+        self.__move_to_named_target(PickPlace.AWAY_TARGET)
         self.__gripper_to_position(PickPlace.GRIPPER_RELEASE_POSITION)
+        rospy.spin()
         """
+        
+        rospy.sleep(20)
+
+        self._grab_pose = self._group.get_current_pose().pose
+        rospy.loginfo(f"{self._group.get_current_pose().pose=}")
+
+        transform_stamped = self._tf_Buffer.lookup_transform(
+            PickPlace.GRASPABLE_OBJECT_PARENT_FRAME, self._group.get_end_effector_link(), rospy.Time(), rospy.Duration(20.0))
+        rospy.loginfo(f"The looked up transform is {transform_stamped}")
+        """
+
+        """
+        set_z = self._grab_pose.position.z
+        rospy.loginfo(f"{set_z=}")
+        set_orientation = self._grab_pose.orientation
+        rospy.loginfo(f"{set_orientation=}")
+        adjust_x = self._grab_pose.position.x - transform_stamped.transform.translation.x
+        rospy.loginfo(f"{adjust_x=}")
+        adjust_y = self._grab_pose.position.y - transform_stamped.transform.translation.y
+        rospy.loginfo(f"{adjust_y=}")
+        """
+
         moveit_commander.roscpp_shutdown()
         
     def __shutdownhook(self):
